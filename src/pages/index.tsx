@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import ModalInputAddress from "./components/ModalInputAddress";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { Button, Layout, Space, Table } from "antd";
+import { Button, Layout, Space, Table, message } from "antd";
 import { Config, useConnectorClient } from "wagmi";
 import { ethers } from "ethers";
 import { BrowserProvider } from "ethers";
@@ -18,6 +18,40 @@ export default function HomePage() {
   const { data: client } = useConnectorClient<Config>();
   const [provider, setProvider] = useState<BrowserProvider | null>(null);
   const [signer, setSigner] = useState<ethers.Signer | null>(null);
+
+  const [updateListCount, setUpdateListCount] = useState<number>(1);
+
+  const handleRefreshBalances = async () => {
+    if (!provider || list.length === 0) {
+      return;
+    }
+
+    const updatedList = await Promise.all(
+      list.map(async (item) => {
+        try {
+          const balance = await provider.getBalance(item.address);
+          return {
+            ...item,
+            balance: ethers.formatEther(balance),
+          };
+        } catch (error) {
+          console.error(`Failed to fetch balance for ${item.address}:`, error);
+          return {
+            ...item,
+            balance: "Error",
+          };
+        }
+      }),
+    );
+
+    setList(updatedList.reverse());
+  };
+
+  // 余额刷新
+  useEffect(() => {
+    void handleRefreshBalances();
+  }, [updateListCount, provider]);
+
   useEffect(() => {
     if (client == null) {
       setProvider(null);
@@ -73,6 +107,7 @@ export default function HomePage() {
               { title: "可用余额", dataIndex: "balance", key: "balance" },
               { title: "状态", dataIndex: "status", key: "status" },
             ]}
+            pagination={false}
           />
         </Content>
         <Footer style={{ textAlign: "right" }}>
@@ -80,8 +115,16 @@ export default function HomePage() {
             <Button type="primary" onClick={() => console.log("发起转账")}>
               发起转账
             </Button>
-            <Button type="primary" onClick={() => console.log("刷新余额")}>
-              刷新余额出
+            <Button
+              type="primary"
+              onClick={async (): Promise<void> => {
+                if (list.length > 0) {
+                  await handleRefreshBalances();
+                  message.success("余额刷新成功");
+                }
+              }}
+            >
+              刷新余额
             </Button>
             <ModalInputAddress
               onOK={(addresses) => {
@@ -91,6 +134,7 @@ export default function HomePage() {
                   status: "-",
                 }));
                 setList([...newList]);
+                setUpdateListCount((prev) => prev + 1);
               }}
             />
             <Button
