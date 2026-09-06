@@ -1,21 +1,27 @@
-import { Link, Outlet } from 'umi';
-import styles from './index.less';
+import "@rainbow-me/rainbowkit/styles.css";
+import { getDefaultConfig, RainbowKitProvider } from "@rainbow-me/rainbowkit";
+import { WagmiProvider } from "wagmi";
+import { mainnet, polygon, optimism, arbitrum, sepolia } from "wagmi/chains";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Outlet } from "umi";
+
+const queryClient = new QueryClient();
+
+const config = getDefaultConfig({
+  appName: "My RainbowKit App",
+  projectId: "7d2b0e0341672c4c7627f5f2f9218296",
+  chains: [mainnet, polygon, optimism, arbitrum, sepolia],
+  ssr: true,
+});
 
 export default function Layout() {
   return (
-    <div className={styles.navs}>
-      <ul>
-        <li>
-          <Link to="/">Home</Link>
-        </li>
-        <li>
-          <Link to="/docs">Docs</Link>
-        </li>
-        <li>
-          <a href="https://github.com/umijs/umi">Github</a>
-        </li>
-      </ul>
-      <Outlet />
-    </div>
+    <WagmiProvider config={config}>
+      <QueryClientProvider client={queryClient}>
+        <RainbowKitProvider>
+          <Outlet />
+        </RainbowKitProvider>
+      </QueryClientProvider>
+    </WagmiProvider>
   );
 }

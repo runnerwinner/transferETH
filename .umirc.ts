@@ -5,5 +5,9 @@ export default defineConfig({
     { path: "/", component: "index" },
     { path: "/docs", component: "docs" },
   ],
-  npmClient: 'yarn',
+  npmClient: "npm",
+  jsMinifier: "esbuild",
+  jsMinifierOptions: {
+    target: "es2020",
+  },
 });
