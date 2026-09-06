@@ -62,7 +62,6 @@ const App: React.FC<AppData> = ({ onOK }) => {
       </Button> */}
       <Modal
         title="录入地址"
-        closable={{ "aria-label": "Custom Close Button" }}
         open={isModalOpen}
         onOk={handleOk}
         onCancel={handleCancel}

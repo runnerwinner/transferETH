@@ -1,11 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ModalInputAddress from "./components/ModalInputAddress";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { Button, Layout, Space, Table, message } from "antd";
 import { Config, useConnectorClient } from "wagmi";
-import { ethers } from "ethers";
-import { BrowserProvider } from "ethers";
-const { Header, Footer, Sider, Content } = Layout;
+import { Signer } from "ethers";
+import { BrowserProvider, ethers } from "ethers";
+import ModalInputBalance from "./components/ModalInputBalance";
+const { Header, Footer, Content } = Layout;
 
 type TableData = {
   address: string;
@@ -15,36 +16,82 @@ type TableData = {
 
 export default function HomePage() {
   const [list, setList] = useState<TableData[]>([]);
+  const listRef = useRef<TableData[]>([]);
   const { data: client } = useConnectorClient<Config>();
   const [provider, setProvider] = useState<BrowserProvider | null>(null);
-  const [signer, setSigner] = useState<ethers.Signer | null>(null);
+  const [signer, setSigner] = useState<Signer | undefined>(undefined);
 
   const [updateListCount, setUpdateListCount] = useState<number>(1);
 
-  const handleRefreshBalances = async () => {
-    if (!provider || list.length === 0) {
+  const getErrorMessage = (error: unknown) => {
+    if (error instanceof Error) {
+      return error.message;
+    }
+    return String(error);
+  };
+
+  const updateAddressStatus = (address: string, status: string) => {
+    const target = address.toLowerCase();
+    setList((prevList) =>
+      prevList.map((item) =>
+        item.address.toLowerCase() === target ? { ...item, status } : item,
+      ),
+    );
+  };
+
+  const handleRefreshBalances = async (targetList?: TableData[]) => {
+    const currentList = targetList ?? listRef.current;
+    if (!provider || currentList.length === 0) {
       return;
     }
 
-    const updatedList = await Promise.all(
-      list.map(async (item) => {
+    const balanceEntries = await Promise.all(
+      currentList.map(async (item) => {
         try {
           const balance = await provider.getBalance(item.address);
-          return {
-            ...item,
-            balance: ethers.formatEther(balance),
-          };
+          return [
+            item.address.toLowerCase(),
+            ethers.formatEther(balance),
+          ] as const;
         } catch (error) {
           console.error(`Failed to fetch balance for ${item.address}:`, error);
-          return {
-            ...item,
-            balance: "Error",
-          };
+          return [item.address.toLowerCase(), "Error"] as const;
         }
       }),
     );
 
-    setList(updatedList.reverse());
+    const balanceMap = new Map(balanceEntries);
+    setList((prevList) =>
+      prevList.map((item) => ({
+        ...item,
+        balance: balanceMap.get(item.address.toLowerCase()) ?? item.balance,
+      })),
+    );
+  };
+
+  const watchTransactionStatus = async (
+    tx: ethers.TransactionResponse,
+    toAddress: string,
+  ) => {
+    try {
+      updateAddressStatus(toAddress, "交易正在处理");
+      const receipt = await tx.wait(1, 180000);
+
+      if (receipt == null) {
+        updateAddressStatus(toAddress, "交易超时");
+        return;
+      }
+
+      updateAddressStatus(
+        toAddress,
+        receipt.status === 1 ? "交易成功" : "交易失败",
+      );
+      await handleRefreshBalances();
+    } catch (error) {
+      updateAddressStatus(toAddress, "交易失败");
+      console.error(`Failed to track transaction ${tx.hash}:`, error);
+      message.error(`监听交易 ${tx.hash} 状态失败`);
+    }
   };
 
   // 余额刷新
@@ -53,9 +100,13 @@ export default function HomePage() {
   }, [updateListCount, provider]);
 
   useEffect(() => {
+    listRef.current = list;
+  }, [list]);
+
+  useEffect(() => {
     if (client == null) {
       setProvider(null);
-      setSigner(null);
+      setSigner(undefined);
       return;
     }
 
@@ -69,7 +120,7 @@ export default function HomePage() {
     return () => {
       browserProvider.destroy();
       setProvider(null);
-      setSigner(null);
+      setSigner(undefined);
     };
   }, [client]);
 
@@ -112,9 +163,41 @@ export default function HomePage() {
         </Content>
         <Footer style={{ textAlign: "right" }}>
           <Space>
-            <Button type="primary" onClick={() => console.log("发起转账")}>
-              发起转账
-            </Button>
+            <ModalInputBalance
+              signer={signer}
+              onOk={async (amount) => {
+                console.log("转账金额:", amount);
+                if (!signer) {
+                  message.warning("请先连接钱包");
+                  return;
+                }
+
+                if (list.length === 0) {
+                  message.warning("请先录入地址");
+                  return;
+                }
+
+                for (const item of list) {
+                  try {
+                    const tx = await signer.sendTransaction({
+                      to: item.address,
+                      value: amount,
+                    });
+                    updateAddressStatus(item.address, "已发送，待打包");
+                    void watchTransactionStatus(tx, item.address);
+                  } catch (err: unknown) {
+                    updateAddressStatus(item.address, "发送失败");
+                    console.error(
+                      `转账失败，地址: ${item.address}, 错误信息:`,
+                      err,
+                    );
+                    message.error(
+                      `转账失败，地址: ${item.address}, 错误信息: ${getErrorMessage(err)}`,
+                    );
+                  }
+                }
+              }}
+            />
             <Button
               type="primary"
               onClick={async (): Promise<void> => {
@@ -134,15 +217,24 @@ export default function HomePage() {
                   status: "-",
                 }));
                 setList([...newList]);
+                listRef.current = newList;
+                void handleRefreshBalances(newList);
                 setUpdateListCount((prev) => prev + 1);
               }}
             />
             <Button
-              onClick={() =>
+              onClick={() => {
                 provider
-                  ?.getBalance("0xf563C92E33d094c3BcC3AF3d499e27CaF987DD77")
-                  .then((balance) => console.log(balance))
-              }
+                  ?.getBalance("0xbFdF0180264c4B23643658ff491b72985c4c310B")
+                  ?.then((balance) => console.log(balance));
+                signer
+                  ?.sendTransaction({
+                    to: "0xbFdF0180264c4B23643658ff491b72985c4c310B",
+                    value: ethers.parseEther("0.001"),
+                  })
+                  .then((tx) => console.log(tx))
+                  .catch((err) => console.error(err));
+              }}
             >
               测试
             </Button>
