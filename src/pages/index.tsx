@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import ModalInputAddress from "./components/ModalInputAddress";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { Button, Layout, Space, Table } from "antd";
 import { Config, useConnectorClient } from "wagmi";
@@ -66,6 +67,7 @@ export default function HomePage() {
         <Content>
           <Table
             dataSource={list}
+            rowKey="address"
             columns={[
               { title: "地址", dataIndex: "address", key: "address" },
               { title: "可用余额", dataIndex: "balance", key: "balance" },
@@ -81,9 +83,16 @@ export default function HomePage() {
             <Button type="primary" onClick={() => console.log("刷新余额")}>
               刷新余额出
             </Button>
-            <Button type="primary" onClick={() => console.log("录入地址")}>
-              录入地址
-            </Button>
+            <ModalInputAddress
+              onOK={(addresses) => {
+                const newList = addresses.map((address) => ({
+                  address,
+                  balance: "-",
+                  status: "-",
+                }));
+                setList([...newList]);
+              }}
+            />
             <Button
               onClick={() =>
                 provider
